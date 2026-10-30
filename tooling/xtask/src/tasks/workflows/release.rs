@@ -76,8 +76,11 @@ pub(crate) fn release() -> Workflow {
 
     // Snap jobs are deliberately not part of `ReleaseBundleJobs`, so they never gate the release.
     let snap_deps = [&linux_tests, &linux_clippy, &check_scripts];
-    let bundle_snap_x86_64 = bundle_snap(Arch::X86_64, &snap_deps);
-    let bundle_snap_aarch64 = bundle_snap(Arch::AARCH64, &snap_deps);
+    let mut bundle_snap_x86_64 = bundle_snap(Arch::X86_64, &snap_deps);
+    let mut bundle_snap_aarch64 = bundle_snap(Arch::AARCH64, &snap_deps);
+    for snap in [&mut bundle_snap_x86_64, &mut bundle_snap_aarch64] {
+        snap.job = snap.job.clone().cond(Expression::new(SNAP_TAG_CONDITION));
+    }
     let upload_snap_assets = upload_snap_assets(
         &create_draft_release,
         &[&bundle_snap_x86_64, &bundle_snap_aarch64],
@@ -504,6 +507,10 @@ fn upload_release_assets(deps: &[&NamedJob], bundle: &ReleaseBundleJobs) -> Name
     )
 }
 
+/// Snaps are only built for stable release tags, never for `-pre` preview tags.
+const SNAP_TAG_CONDITION: &str =
+    "startsWith(github.ref, 'refs/tags/v') && !endsWith(github.ref, '-pre')";
+
 /// Attaches whichever snaps were built to the release. Runs even if a snap job failed, and
 /// is a no-op when no snap artifacts exist.
 fn upload_snap_assets(create_draft_release: &NamedJob, snap_jobs: &[&NamedJob]) -> NamedJob {
@@ -514,7 +521,7 @@ fn upload_snap_assets(create_draft_release: &NamedJob, snap_jobs: &[&NamedJob]) 
         dependant_job(&deps)
             .runs_on(runners::LINUX_MEDIUM)
             .cond(Expression::new(format!(
-                "always() && needs.{}.result == 'success'",
+                "always() && needs.{}.result == 'success' && {SNAP_TAG_CONDITION}",
                 create_draft_release.name
             )))
             .permissions(Permissions::default().contents(Level::Write))

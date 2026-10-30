@@ -36,7 +36,6 @@ CI already runs `snap install --dangerous --classic` and `zed --version` in each
 - **Easy plugs** if it is ever unblocked: GPU, display (x11/wayland), audio, updater-related.
 - Revisit only if snapd gains a suitable interface. A strict snap would also need a data
   migration or `personal-files`. No work is planned.
-  See `.scratch/snap-packaging/research/03-strict-confinement.md` (local planning notes).
 
 ## Store submitter hand-off
 

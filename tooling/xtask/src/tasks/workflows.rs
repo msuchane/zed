@@ -28,8 +28,8 @@ mod run_bundling;
 
 mod release;
 mod run_tests;
-mod snap;
 mod runners;
+mod snap;
 mod steps;
 mod vars;
 
