@@ -1,0 +1,148 @@
+# Generated from xtask::workflows::snap
+# Rebuild with `cargo xtask workflows`.
+name: snap
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  bundle_snap_x86_64:
+    if: (github.repository_owner == 'zed-industries' || github.repository_owner == 'zed-extensions')
+    runs-on: namespace-profile-32x64-ubuntu-2004
+    env:
+      CARGO_INCREMENTAL: 0
+      ZED_CLIENT_CHECKSUM_SEED: ${{ secrets.ZED_CLIENT_CHECKSUM_SEED }}
+      ZED_MINIDUMP_ENDPOINT: ${{ secrets.ZED_SENTRY_MINIDUMP_ENDPOINT }}
+      CC: clang-18
+      CXX: clang++-18
+      LLD: /usr/bin/ld.lld-18
+      SNAP_ARCH: amd64
+    steps:
+    - name: steps::checkout_repo
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      with:
+        clean: false
+    - name: steps::cache_rust_dependencies_namespace
+      uses: namespacelabs/nscloud-cache-action@a90bb5d4b27522ce881c6e98eebd7d7e6d1653f9
+      with:
+        cache: rust
+        path: ~/.rustup
+    - name: steps::setup_linux
+      run: ./script/linux
+    - name: steps::download_wasi_sdk
+      run: ./script/download-wasi-sdk
+    - name: ./script/bundle-linux --snap
+      run: ./script/bundle-linux --snap
+    - name: run_bundling::bundle_snap
+      run: |
+        sudo snap install snapcraft --classic --channel=9.x/stable
+        sudo snap install lxd
+        sudo lxd init --auto
+        sudo usermod -a -G lxd "$USER"
+    - name: run_bundling::bundle_snap
+      run: sg lxd -c ./script/snap-build
+    - name: run_bundling::bundle_snap
+      run: |
+        sudo snap install --dangerous --classic zed_*_${SNAP_ARCH}.snap
+        zed --version
+    - name: run_bundling::bundle_snap
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: zed-snap-x86_64
+        path: zed_*.snap
+        if-no-files-found: error
+    - name: snap::lint_snap
+      run: |
+        mkdir -p snap-review
+        status=0
+        snapcraft lint zed_*_${SNAP_ARCH}.snap 2>&1 | tee "snap-review/snapcraft-lint-${SNAP_ARCH}.txt" || status=$?
+        echo "snapcraft lint exit status: ${status}" | tee -a "snap-review/snapcraft-lint-${SNAP_ARCH}.txt"
+    - name: snap::collect_review_evidence
+      run: |
+        cp crates/zed/resources/snap/classic-justification.md snap-review/classic-justification.md
+        cp snap/snapcraft.yaml snap-review/snapcraft.yaml
+        for name in code sublime-text intellij-idea-community pycharm-community nvim; do
+            curl -fsS -H 'Snap-Device-Series: 16' \
+                "https://api.snapcraft.io/v2/snaps/info/${name}?fields=confinement" |
+                jq -r '"\(.name): \(.["channel-map"][0].confinement)"'
+        done | tee snap-review/classic-precedent.txt
+    - name: snap::upload_review_evidence
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: zed-snap-review-x86_64
+        path: snap-review/*
+        if-no-files-found: error
+    timeout-minutes: 60
+  bundle_snap_aarch64:
+    if: (github.repository_owner == 'zed-industries' || github.repository_owner == 'zed-extensions')
+    runs-on: namespace-profile-8x32-ubuntu-2004-arm-m4
+    env:
+      CARGO_INCREMENTAL: 0
+      ZED_CLIENT_CHECKSUM_SEED: ${{ secrets.ZED_CLIENT_CHECKSUM_SEED }}
+      ZED_MINIDUMP_ENDPOINT: ${{ secrets.ZED_SENTRY_MINIDUMP_ENDPOINT }}
+      CC: clang-18
+      CXX: clang++-18
+      LLD: /usr/bin/ld.lld-18
+      SNAP_ARCH: arm64
+    steps:
+    - name: steps::checkout_repo
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      with:
+        clean: false
+    - name: steps::cache_rust_dependencies_namespace
+      uses: namespacelabs/nscloud-cache-action@a90bb5d4b27522ce881c6e98eebd7d7e6d1653f9
+      with:
+        cache: rust
+        path: ~/.rustup
+    - name: steps::setup_linux
+      run: ./script/linux
+    - name: steps::download_wasi_sdk
+      run: ./script/download-wasi-sdk
+    - name: ./script/bundle-linux --snap
+      run: ./script/bundle-linux --snap
+    - name: run_bundling::bundle_snap
+      run: |
+        sudo snap install snapcraft --classic --channel=9.x/stable
+        sudo snap install lxd
+        sudo lxd init --auto
+        sudo usermod -a -G lxd "$USER"
+    - name: run_bundling::bundle_snap
+      run: sg lxd -c ./script/snap-build
+    - name: run_bundling::bundle_snap
+      run: |
+        sudo snap install --dangerous --classic zed_*_${SNAP_ARCH}.snap
+        zed --version
+    - name: run_bundling::bundle_snap
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: zed-snap-aarch64
+        path: zed_*.snap
+        if-no-files-found: error
+    - name: snap::lint_snap
+      run: |
+        mkdir -p snap-review
+        status=0
+        snapcraft lint zed_*_${SNAP_ARCH}.snap 2>&1 | tee "snap-review/snapcraft-lint-${SNAP_ARCH}.txt" || status=$?
+        echo "snapcraft lint exit status: ${status}" | tee -a "snap-review/snapcraft-lint-${SNAP_ARCH}.txt"
+    - name: snap::collect_review_evidence
+      run: |
+        cp crates/zed/resources/snap/classic-justification.md snap-review/classic-justification.md
+        cp snap/snapcraft.yaml snap-review/snapcraft.yaml
+        for name in code sublime-text intellij-idea-community pycharm-community nvim; do
+            curl -fsS -H 'Snap-Device-Series: 16' \
+                "https://api.snapcraft.io/v2/snaps/info/${name}?fields=confinement" |
+                jq -r '"\(.name): \(.["channel-map"][0].confinement)"'
+        done | tee snap-review/classic-precedent.txt
+    - name: snap::upload_review_evidence
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: zed-snap-review-aarch64
+        path: snap-review/*
+        if-no-files-found: error
+    timeout-minutes: 60
+defaults:
+  run:
+    shell: bash -euxo pipefail {0}
