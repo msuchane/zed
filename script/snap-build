@@ -32,6 +32,7 @@ fi
 
 mkdir -p snap/gui
 # Snapcraft resolves local sources relative to the project root, so stage the tarball under snap/.
+trap 'rm -f "snap/zed-linux-${arch}.tar.gz"' EXIT
 cp "$tarball" "snap/zed-linux-${arch}.tar.gz"
 
 export DO_STARTUP_NOTIFY="true"
