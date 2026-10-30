@@ -1,13 +1,38 @@
 #!/usr/bin/env bash
 
+# Builds the classic snap from the tarball produced by `script/bundle-linux --snap`.
+
 set -euxo pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: $0 <release_version>"
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [release_version]"
+  exit 1
+fi
+
+channel=$(<crates/zed/RELEASE_CHANNEL)
+if [ "$channel" != "stable" ]; then
+  echo "Error: only the stable channel can be packaged as a snap (got '$channel')." >&2
+  exit 1
+fi
+
+release_version="${1:-$(script/get-crate-version zed)}"
+
+case "$(uname -m)" in
+  x86_64) arch=x86_64 ;;
+  aarch64) arch=aarch64 ;;
+  *) echo "Error: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+esac
+
+target_dir="${CARGO_TARGET_DIR:-target}"
+tarball="${target_dir}/release/zed-linux-${arch}.tar.gz"
+if [ ! -f "$tarball" ]; then
+  echo "Error: $tarball not found. Run 'script/bundle-linux --snap' first." >&2
   exit 1
 fi
 
 mkdir -p snap/gui
+# Snapcraft resolves local sources relative to the project root, so stage the tarball under snap/.
+cp "$tarball" "snap/zed-linux-${arch}.tar.gz"
 
 export DO_STARTUP_NOTIFY="true"
 export APP_NAME="Zed"
@@ -17,7 +42,8 @@ export APP_ARGS="%U"
 envsubst < "crates/zed/resources/zed.desktop.in" > "snap/gui/zed.desktop"
 cp "crates/zed/resources/app-icon.png" "snap/gui/zed.png"
 
-RELEASE_VERSION="$1" envsubst < crates/zed/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
+RELEASE_VERSION="$release_version" SNAP_TARBALL="snap/zed-linux-${arch}.tar.gz" \
+  envsubst '$RELEASE_VERSION $SNAP_TARBALL' < crates/zed/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
 
 # Clean seems to be needed to actually check that the snapcraft.yaml
 # works.  For example, when a `stage-package` is removed, it will
