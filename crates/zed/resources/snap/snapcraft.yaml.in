@@ -67,3 +67,4 @@ apps:
     common-id: dev.zed.Zed
     environment:
       ZED_BUNDLE_TYPE: snap
+      ZED_UPDATE_EXPLANATION: Please use snap to update zed
