@@ -4,7 +4,9 @@ use gh_workflow::{
 use indoc::formatdoc;
 
 use crate::tasks::workflows::{
-    run_bundling::{build_static_bwrap, bundle_linux, bundle_mac, bundle_windows, upload_artifact},
+    run_bundling::{
+        build_static_bwrap, bundle_linux, bundle_mac, bundle_snap, bundle_windows, upload_artifact,
+    },
     run_tests,
     runners::{self, Arch, Platform},
     steps::{
@@ -72,6 +74,15 @@ pub(crate) fn release() -> Workflow {
         ),
     };
 
+    // Snap jobs are deliberately not part of `ReleaseBundleJobs`, so they never gate the release.
+    let snap_deps = [&linux_tests, &linux_clippy, &check_scripts];
+    let bundle_snap_x86_64 = bundle_snap(Arch::X86_64, &snap_deps);
+    let bundle_snap_aarch64 = bundle_snap(Arch::AARCH64, &snap_deps);
+    let upload_snap_assets = upload_snap_assets(
+        &create_draft_release,
+        &[&bundle_snap_x86_64, &bundle_snap_aarch64],
+    );
+
     let upload_release_assets = upload_release_assets(&[&create_draft_release], &bundle);
     let validate_release_assets = validate_release_assets(&[&upload_release_assets]);
     let release_compliance = release_compliance_check(
@@ -126,6 +137,9 @@ pub(crate) fn release() -> Workflow {
             }
             workflow
         })
+        .add_job(bundle_snap_x86_64.name, bundle_snap_x86_64.job)
+        .add_job(bundle_snap_aarch64.name, bundle_snap_aarch64.job)
+        .add_job(upload_snap_assets.name, upload_snap_assets.job)
         .add_job(upload_release_assets.name, upload_release_assets.job)
         .add_job(validate_release_assets.name, validate_release_assets.job)
         .add_job(release_compliance.name, release_compliance.job)
@@ -486,6 +500,37 @@ fn upload_release_assets(deps: &[&NamedJob], bundle: &ReleaseBundleJobs) -> Name
             .add_step(
                 steps::script("gh release upload \"$GITHUB_REF_NAME\" --repo=zed-industries/zed release-artifacts/*")
                     .add_env(("GITHUB_TOKEN", vars::GITHUB_TOKEN)),
+            ),
+    )
+}
+
+/// Attaches whichever snaps were built to the release. Runs even if a snap job failed, and
+/// is a no-op when no snap artifacts exist.
+fn upload_snap_assets(create_draft_release: &NamedJob, snap_jobs: &[&NamedJob]) -> NamedJob {
+    let mut deps = vec![create_draft_release];
+    deps.extend(snap_jobs);
+
+    named::job(
+        dependant_job(&deps)
+            .runs_on(runners::LINUX_MEDIUM)
+            .cond(Expression::new(format!(
+                "always() && needs.{}.result == 'success'",
+                create_draft_release.name
+            )))
+            .permissions(Permissions::default().contents(Level::Write))
+            .add_step(download_workflow_artifacts())
+            .add_step(steps::script("ls -lR ./artifacts"))
+            .add_step(
+                named::bash(indoc::indoc! {r#"
+                    shopt -s nullglob
+                    snaps=(./artifacts/zed-snap-*/zed_*.snap)
+                    if [ ${#snaps[@]} -eq 0 ]; then
+                        echo "No snap artifacts found; nothing to upload."
+                        exit 0
+                    fi
+                    gh release upload "$GITHUB_REF_NAME" --repo=zed-industries/zed "${snaps[@]}"
+                "#})
+                .add_env(("GITHUB_TOKEN", vars::GITHUB_TOKEN)),
             ),
     )
 }

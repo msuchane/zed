@@ -205,6 +205,44 @@ pub(crate) fn bundle_linux(
     }
 }
 
+pub(crate) fn bundle_snap(arch: Arch, deps: &[&NamedJob]) -> NamedJob {
+    let snap_arch = match arch {
+        Arch::X86_64 => "amd64",
+        Arch::AARCH64 => "arm64",
+    };
+    let smoke_test = indoc! {r#"
+        sudo snap install --dangerous --classic zed_*_${SNAP_ARCH}.snap
+        zed --version
+    "#};
+    NamedJob {
+        name: format!("bundle_snap_{arch}"),
+        job: bundle_job(deps)
+            .runs_on(arch.linux_bundler())
+            .envs(bundle_envs(Platform::Linux))
+            .add_env(Env::new("CC", "clang-18"))
+            .add_env(Env::new("CXX", "clang++-18"))
+            .add_env(Env::new("LLD", "/usr/bin/ld.lld-18"))
+            .add_env(Env::new("SNAP_ARCH", snap_arch))
+            .add_step(steps::checkout_repo())
+            .add_step(steps::cache_rust_dependencies_namespace())
+            .map(steps::install_linux_dependencies)
+            .add_step(steps::script("./script/bundle-linux --snap"))
+            .add_step(named::bash(indoc! {r#"
+                sudo snap install snapcraft --classic --channel=9.x/stable
+                sudo snap install lxd
+                sudo lxd init --auto
+                sudo usermod -a -G lxd "$USER"
+            "#}))
+            // `sg` picks up the new lxd group membership without a new login session.
+            .add_step(named::bash("sg lxd -c ./script/snap-build"))
+            .add_step(named::bash(smoke_test))
+            .add_step(
+                steps::upload_artifact(format!("zed-snap-{arch}"), "zed_*.snap")
+                    .if_no_files_found(IfNoFilesFound::Error),
+            ),
+    }
+}
+
 pub(crate) fn bundle_windows(
     arch: Arch,
     release_channel: Option<ReleaseChannel>,

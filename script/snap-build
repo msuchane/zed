@@ -52,3 +52,14 @@ RELEASE_VERSION="$release_version" SNAP_TARBALL="snap/zed-linux-${arch}.tar.gz" 
 snapcraft clean
 
 snapcraft
+
+case "$arch" in
+  x86_64) snap_arch=amd64 ;;
+  aarch64) snap_arch=arm64 ;;
+esac
+snap_file="zed_${release_version}_${snap_arch}.snap"
+if [ ! -f "$snap_file" ]; then
+  echo "Error: expected snap $snap_file was not produced." >&2
+  exit 1
+fi
+echo "Built $snap_file"
