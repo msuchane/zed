@@ -62,6 +62,8 @@ crates/docs_preprocessor/actions.json
 
 .local*
 .cache
+# Workshop state file (per-machine, see `workshop launch`)
+.workshop.lock
 
 # Local issue tracker and specs
 /.scratch
